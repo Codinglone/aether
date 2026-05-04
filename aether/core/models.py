@@ -18,10 +18,12 @@ class UIElement(BaseModel):
     role: str
     name: str
     description: Optional[str] = None
-    bounds: Bounds
+    bounds: Optional[Bounds] = None
     state: Set[str] = set()
     children: list["UIElement"] = []
     parent_id: Optional[str] = None
+    app: Optional[str] = None
+    metadata: dict[str, Any] = {}
 
 
 class UIMap(BaseModel):
