@@ -42,3 +42,26 @@ class MockPerceptionAdapter(PerceptionAdapter):
                     return found
             return None
         return _search(self._uimap.elements)
+
+
+from aether.action.base import ActionAdapter
+
+
+class MockActionAdapter(ActionAdapter):
+    def __init__(self):
+        self.executed_actions: list[dict] = []
+
+    def click(self, x: int, y: int) -> None:
+        self.executed_actions.append({"type": "click", "x": x, "y": y})
+
+    def type_text(self, text: str) -> None:
+        self.executed_actions.append({"type": "type", "text": text})
+
+    def hotkey(self, modifiers: list[str], key: str) -> None:
+        self.executed_actions.append({"type": "hotkey", "modifiers": modifiers, "key": key})
+
+    def scroll(self, x: int, y: int, delta: int) -> None:
+        self.executed_actions.append({"type": "scroll", "x": x, "y": y, "delta": delta})
+
+    def clear(self) -> None:
+        self.executed_actions.clear()
