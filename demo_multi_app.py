@@ -147,7 +147,7 @@ def demo_calculator():
 
 def demo_settings():
     print("\n" + "=" * 70)
-    print("⚙️  DEMO 2: Settings")
+    print("⚙️  DEMO 2: Settings (Wi-Fi Toggle)")
     print("=" * 70)
     
     action = LinuxActionAdapter()
@@ -164,11 +164,59 @@ def demo_settings():
     action.focus_window_by_name("Settings")
     time.sleep(0.5)
 
-    buttons = get_buttons(app)
-    print(f"🎹 Buttons: {', '.join(buttons[:8])}")
+    # Find all toggle buttons
+    toggles = []
+    def find_toggles(node, depth=0):
+        try:
+            role = node.getRoleName()
+            if role == "toggle button" and node.name:
+                toggles.append(node.name)
+            for i in range(node.childCount):
+                find_toggles(node.getChildAtIndex(i), depth + 1)
+        except:
+            pass
+    
+    find_toggles(app)
+    print(f"🎛️  Toggle buttons found: {', '.join(toggles[:10]) if toggles else 'None'}")
+
+    # Try to find Wi-Fi toggle by various names
+    wifi_names = ["Wi-Fi", "WiFi", "Wifi", "Wi Fi", "Wireless", "wi-fi"]
+    wifi_toggled = False
+    
+    for wifi_name in wifi_names:
+        toggle = find_element(app, name=wifi_name, role="toggle button")
+        if toggle:
+            print(f"   Found Wi-Fi toggle: '{wifi_name}'")
+            try:
+                toggle.queryAction().doAction(0)
+                wifi_toggled = True
+                print("   ✅ Toggled Wi-Fi!")
+                time.sleep(0.5)
+                break
+            except Exception as e:
+                print(f"   ⚠️  Failed to toggle: {e}")
+    
+    if not wifi_toggled and toggles:
+        # Try clicking the first toggle as fallback
+        print(f"   Trying first toggle: '{toggles[0]}'...")
+        toggle = find_element(app, name=toggles[0], role="toggle button")
+        if toggle:
+            try:
+                toggle.queryAction().doAction(0)
+                print(f"   ✅ Toggled '{toggles[0]}'")
+                wifi_toggled = True
+            except:
+                pass
+    
+    if not wifi_toggled:
+        print("   ⚠️  No Wi-Fi toggle found (app may use different accessibility names)")
+
+    time.sleep(1)
+    print("🚪 Closing Settings...")
+    action.hotkey(["alt"], "F4")
+    time.sleep(0.5)
     
     print("✅ Settings demo complete")
-    action.hotkey(["alt"], "F4")
     return True
 
 
@@ -194,48 +242,56 @@ def demo_file_manager():
     # Create folder with Ctrl+Shift+N
     print("📁 Creating new folder (Ctrl+Shift+N)...")
     action.hotkey(["ctrl", "shift"], "n")
-    time.sleep(1.5)
+    time.sleep(2)
 
-    # Handle the "New Folder" dialog
-    print("   Handling dialog...")
+    # The dialog may appear as a separate window - try to find and focus it
+    print("   Looking for dialog window...")
+    dialog_focused = False
     
-    # Look for dialog - it's usually a separate window or alert
-    # Try multiple approaches
-    dialog_handled = False
+    # Try common dialog window names
+    for dialog_name in ["New Folder", "Create Folder", "Folder Name", "nautilus"]:
+        if action.focus_window_by_name(dialog_name):
+            print(f"   Focused dialog: '{dialog_name}'")
+            dialog_focused = True
+            time.sleep(0.5)
+            break
     
-    # Approach 1: Type folder name + Enter (dialog might be focused automatically)
-    print("   Typing folder name...")
+    if not dialog_focused:
+        print("   Dialog may be inline, continuing...")
+
+    # Type folder name
+    print("   Typing folder name 'Aether-Demo'...")
     action.type_text("Aether-Demo")
     time.sleep(0.5)
-    action.hotkey([], "Return")
-    time.sleep(1)
     
-    # Check if dialog still exists by looking for "Create" button
+    # Try Enter to confirm
+    print("   Pressing Enter to confirm...")
+    action.hotkey([], "Return")
+    time.sleep(1.5)
+    
+    # Check if dialog still exists - look for Create or Cancel buttons
+    dialog_still_open = False
     desktop = pyatspi.Registry.getDesktop(0)
     for i in range(desktop.childCount):
         a = desktop.getChildAtIndex(i)
         if a:
-            # Search for Create button in any app
             create_btn = find_element(a, name="Create", role="push button")
-            if create_btn:
-                print("   Found Create button, clicking...")
-                try:
-                    create_btn.queryAction().doAction(0)
-                    dialog_handled = True
-                    time.sleep(0.5)
-                except:
-                    pass
-            
-            # Also try Cancel button (means dialog is still there)
             cancel_btn = find_element(a, name="Cancel", role="push button")
-            if cancel_btn:
-                print("   Dialog still open, trying Enter again...")
-                action.hotkey([], "Return")
-                time.sleep(0.5)
-                dialog_handled = True
+            if create_btn or cancel_btn:
+                dialog_still_open = True
+                if create_btn:
+                    print("   Found Create button, clicking...")
+                    try:
+                        create_btn.queryAction().doAction(0)
+                        time.sleep(0.5)
+                    except:
+                        pass
+                break
 
-    if not dialog_handled:
-        print("   ℹ️  Dialog may have been handled automatically")
+    if dialog_still_open:
+        print("   Dialog was still open, handled it")
+    else:
+        print("   Dialog accepted automatically")
 
     # Verify folder was created
     import pathlib
@@ -243,10 +299,12 @@ def demo_file_manager():
     if folder_path.exists():
         print(f"✅ Folder created: {folder_path}")
     else:
-        print(f"⚠️  Folder not found at {folder_path} (may need different name)")
+        print(f"⚠️  Folder not found at {folder_path}")
 
     # Close
     print("🚪 Closing file manager...")
+    action.focus_window_by_name("Nautilus")
+    time.sleep(0.3)
     action.hotkey(["ctrl"], "q")
     time.sleep(0.5)
 
