@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+.env
+progress.json
+knowledge.md
+.coverage
+htmlcov/
+.superpowers/
