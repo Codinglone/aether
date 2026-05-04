@@ -6,6 +6,13 @@ from aether.core.models import Action
 
 
 class SafetyChecker:
+    """Best-effort safety checks for actions.
+
+    The shell blacklist uses simple string splitting and is not a robust
+    security boundary. It can be bypassed with shell quoting, subshells,
+    or other tricks. Treat it as a safety rail, not a sandbox.
+    """
+
     SHELL_BLACKLIST = {"rm", "sudo", "mkfs", "dd", "format", "fdisk"}
     MAX_CLICK_X = 7680
     MAX_CLICK_Y = 4320
