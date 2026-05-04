@@ -6,7 +6,8 @@ Demonstrates Aether-Native controlling real applications:
 1. Calculator - AT-SPI button clicks + result verification
 2. Settings - Toggle switches
 3. File Manager - Create folder (handles dialog)
-4. Cursor IDE - Open command palette, create new file
+4. Mouse Cursor - Move mouse and click on screen
+5. Cursor Editor - Open command palette, create new file
 """
 
 import os
@@ -375,64 +376,148 @@ def demo_file_manager():
     return True
 
 
-def demo_cursor():
+def is_process_running(name: str) -> bool:
+    """Check if a process is running by name."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", name],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        return result.returncode == 0 and result.stdout.strip() != ""
+    except Exception:
+        return False
+
+
+def demo_mouse_cursor():
     print("\n" + "=" * 70)
-    print("💻 DEMO 4: Cursor IDE")
+    print("🖱️  DEMO 4: Mouse Cursor Control")
     print("=" * 70)
-    print("   Focuses Cursor, opens Command Palette, creates new file")
+    print("   Moves mouse to specific coordinates and clicks")
+
+    action = LinuxActionAdapter()
+    
+    # Get screen size
+    try:
+        import gi
+        gi.require_version('Gdk', '4.0')
+        from gi.repository import Gdk
+        display = Gdk.Display.get_default()
+        monitor = display.get_primary_monitor() or display.get_monitor(0)
+        geometry = monitor.get_geometry()
+        screen_w, screen_h = geometry.width, geometry.height
+    except Exception:
+        screen_w, screen_h = 1920, 1080
+    
+    print(f"\n   Screen size: {screen_w}x{screen_h}")
+    
+    # Move mouse in a square pattern
+    center_x, center_y = screen_w // 2, screen_h // 2
+    offset = 100
+    positions = [
+        (center_x - offset, center_y - offset, "top-left"),
+        (center_x + offset, center_y - offset, "top-right"),
+        (center_x + offset, center_y + offset, "bottom-right"),
+        (center_x - offset, center_y + offset, "bottom-left"),
+        (center_x, center_y, "center"),
+    ]
+    
+    print("   Moving mouse in a pattern...")
+    for x, y, label in positions:
+        print(f"      → {label} ({x}, {y})")
+        action.click(x, y)
+        time.sleep(0.5)
+    
+    print("   ✅ Mouse movement and clicking demo complete")
+    return True
+
+
+def demo_cursor_editor():
+    print("\n" + "=" * 70)
+    print("💻 DEMO 5: Cursor Editor (Keyboard-Only, Electron App)")
+    print("=" * 70)
+    print("   Electron apps don't expose AT-SPI, so we use keyboard shortcuts only")
 
     action = LinuxActionAdapter()
 
-    # Check if Cursor is running
+    # Check if Cursor is running, launch if not
     print("\n🔍 Looking for Cursor IDE...")
-    app = wait_for_app(["cursor", "code"], timeout=3)
     
-    if not app:
-        print("❌ Cursor not found. Make sure it's running!")
-        print("   Launch Cursor manually, then run this demo again.")
-        return False
-
-    print(f"✅ Found: {app.name}")
+    if not is_process_running("cursor"):
+        print("   Cursor not running, launching it...")
+        subprocess.Popen(["cursor"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(5)
+    else:
+        print("   ✅ Cursor process found")
     
-    # Focus Cursor window
-    print("🎯 Focusing Cursor...")
-    focused = action.focus_window_by_name("Cursor")
+    # Electron apps often don't show in AT-SPI, so we skip AT-SPI detection
+    # and go straight to window focusing
+    print("🎯 Focusing Cursor window...")
+    focused = False
+    for window_name in ["Cursor", "cursor", "Untitled", "*.md - Cursor", "Welcome"]:
+        if action.focus_window_by_name(window_name):
+            print(f"   ✅ Focused window matching '{window_name}'")
+            focused = True
+            break
+        time.sleep(0.2)
+    
     if not focused:
-        # Try focusing by app name variations
-        action.focus_window_by_name("cursor")
+        print("   ⚠️  Could not focus Cursor window, trying generic focus...")
+        # Try to find any window with "cursor" in the title using xdotool
+        try:
+            result = subprocess.run(
+                ["xdotool", "search", "--name", "(?i)cursor"],
+                capture_output=True, text=True, check=False
+            )
+            if result.stdout.strip():
+                window_id = result.stdout.strip().split("\n")[0]
+                subprocess.run(["xdotool", "windowactivate", window_id], check=False)
+                print(f"   ✅ Activated window ID {window_id}")
+                focused = True
+        except Exception as e:
+            print(f"   ⚠️  xdotool fallback failed: {e}")
+    
+    if not focused:
+        print("❌ Could not focus Cursor window")
+        return False
+    
     time.sleep(1)
+    
+    # Handle any permission dialogs
+    handle_permission_dialogs()
 
     # Open Command Palette with Ctrl+Shift+P
     print("⌨️  Opening Command Palette (Ctrl+Shift+P)...")
     action.hotkey(["ctrl", "shift"], "p")
-    time.sleep(1)
+    time.sleep(1.5)
 
     # Type "new file" command
     print("📝 Typing 'new file' command...")
     action.type_text("new file")
     time.sleep(0.5)
     action.hotkey([], "Return")
-    time.sleep(1)
+    time.sleep(1.5)
 
     # Type some content
     print("✏️  Typing demo content...")
     action.type_text("# Hello from Aether-Native!")
     time.sleep(0.3)
     action.hotkey([], "Return")
-    action.type_text("# This file was created by an AI agent using AT-SPI")
+    action.type_text("# This file was created by an AI agent using keyboard automation")
     time.sleep(0.3)
 
     # Save file
     print("💾 Saving file (Ctrl+S)...")
     action.hotkey(["ctrl"], "s")
-    time.sleep(1)
+    time.sleep(1.5)
 
     # Type filename
     print("📝 Entering filename...")
     action.type_text("/tmp/aether-cursor-demo.md")
     time.sleep(0.3)
     action.hotkey([], "Return")
-    time.sleep(1)
+    time.sleep(1.5)
 
     # Verify
     import pathlib
@@ -449,13 +534,14 @@ def main():
     print("=" * 70)
     print("AETHER-NATIVE: Multi-App Automation Demo")
     print("=" * 70)
-    print("\nDemonstrates controlling 4 applications:")
+    print("\nDemonstrates controlling 5 things:")
     print("  1. Calculator - AT-SPI button clicks")
     print("  2. Settings - App detection")
     print("  3. File Manager - Create folder with dialog handling")
-    print("  4. Cursor IDE - Command palette + file creation")
+    print("  4. Mouse Cursor - Move and click on screen")
+    print("  5. Cursor Editor - Command palette + file creation")
     print("\n⚠️  Make sure you're not actively using the mouse/keyboard!")
-    print("   Also make sure Cursor IDE is already running!")
+    print("   Also make sure Cursor Editor is already running!")
     print("   Starting in 5 seconds...")
     time.sleep(5)
 
@@ -486,10 +572,18 @@ def main():
     time.sleep(1)
 
     try:
-        results.append(("Cursor IDE", demo_cursor()))
+        results.append(("Mouse Cursor", demo_mouse_cursor()))
     except Exception as e:
-        print(f"❌ Cursor failed: {e}")
-        results.append(("Cursor", False))
+        print(f"❌ Mouse Cursor failed: {e}")
+        results.append(("Mouse Cursor", False))
+
+    time.sleep(1)
+
+    try:
+        results.append(("Cursor Editor", demo_cursor_editor()))
+    except Exception as e:
+        print(f"❌ Cursor Editor failed: {e}")
+        results.append(("Cursor Editor", False))
 
     # Summary
     print("\n" + "=" * 70)
@@ -506,7 +600,8 @@ def main():
     print("  • Controls Calculator via AT-SPI semantic names")
     print("  • Navigates Settings and detects buttons")
     print("  • Handles File Manager dialogs (type + confirm)")
-    print("  • Automates Cursor IDE via keyboard shortcuts")
+    print("  • Moves mouse cursor and clicks on screen")
+    print("  • Automates Cursor Editor via keyboard shortcuts")
     print("  • Works across GTK, Electron, and hybrid apps")
     print("=" * 70)
 
