@@ -193,3 +193,142 @@ def create_action_adapter():
 - **Windows UIA** is more reliable than MSAA but slower. Cache element trees when possible.
 - **Ghost Overlay** should be optional (`--no-overlay` flag) for headless/remote usage.
 - Keep Phase 1 focused on **adapters + overlay**. Don't add new AI models or complex reasoning yet.
+
+---
+
+## Phase 1.5: Vision & Brain Integration (Next 3 Tasks)
+
+These tasks build on the completed hybrid perception system to add real intelligence.
+
+### Task 11: Multimodal Vision Support (`ollama pull llava`)
+
+**Goal:** Make the LLM fallback actually "see" screenshots instead of guessing.
+**Current state:** `LocalLLM.analyze_screenshot()` reasons from text description only.
+**Target:** Feed screenshot image to a vision model.
+
+#### Subtasks
+- [ ] `ollama pull llava` (or `bakllava`, `moondream`)
+- [ ] Update `LocalLLM.analyze_screenshot()` to accept image bytes
+- [ ] Use Ollama's `/api/generate` with `images` field (base64-encoded PNG)
+- [ ] Prompt: "What UI elements do you see? Where is the [button/input]?"
+- [ ] Parse response to extract: element_name, coordinates, confidence
+- [ ] Benchmark: vision vs text-only accuracy on common UI patterns
+
+#### Why This Matters
+| | Text-Only LLM | Vision LLM |
+|--|---------------|------------|
+| Knows button exists? | Sometimes | Yes |
+| Knows exact position? | No | Yes (pixels) |
+| Handles custom UIs? | Poorly | Well |
+| Speed | ~200ms | ~1-2s |
+
+#### Files to Modify
+- `aether/brain/local_llm.py` — Add `analyze_screenshot_vision()`
+- `aether/perception/hybrid.py` — Use vision fallback when text fallback fails
+
+---
+
+### Task 12: Integrate Hybrid Perception into RALPH Loop
+
+**Goal:** The brain (RALPH) should use hybrid perception for all decisions.
+**Current state:** RALPH loop has hardcoded action sequences. No dynamic perception.
+**Target:** RALPH queries perception before each action, adapts to UI changes.
+
+#### Subtasks
+- [ ] Inject `HybridPerceptionAdapter` into `RALPHLoop` constructor
+- [ ] Before each action:
+  1. `perception.capture()` — get current UI state
+  2. `brain.suggest_action(task, elements, history)` — LLM decides next step
+  3. `action.execute()` — perform the action
+  4. `perception.verify()` — confirm UI changed as expected
+- [ ] Add retry logic: if action fails, re-query perception and try alternative
+- [ ] Handle "stuck" detection: if same state repeats 3x, trigger screenshot + vision
+- [ ] Add `max_retries` and `timeout` to task execution
+
+#### Example Flow
+```
+User: "Submit the form"
+RALPH:
+  1. capture() → [NameField, EmailField, SubmitButton]
+  2. suggest_action() → {"action": "click", "target": "SubmitButton"}
+  3. click("SubmitButton")
+  4. capture() → [SuccessMessage] ✅
+```
+
+#### Files to Modify
+- `aether/core/loop.py` — Wire in perception + brain
+- `aether/core/brain.py` — Add `suggest_action()` method
+- `demo_smart_task.py` — Demo: "Find and click X" with dynamic adaptation
+
+---
+
+### Task 13: Smart Task Demo — End-to-End Intelligence
+
+**Goal:** A demo that proves the entire system works together dynamically.
+**Current demos:** Static sequences (always click same buttons).
+**Target:** Natural language task → dynamic perception → adaptive execution.
+
+#### Demo Ideas
+1. **"Play a YouTube video in Brave"**
+   - Detect if Brave is running (AT-SPI or process check)
+   - If not, launch it
+   - Find YouTube tab or navigate to youtube.com
+   - Find first video thumbnail (AT-SPI or vision)
+   - Click it, wait for player, click fullscreen
+
+2. **"Send a message in Discord"**
+   - Detect Discord window (Electron, no AT-SPI)
+   - Screenshot + vision fallback to find message input
+   - Type message, find send button, click it
+
+3. **"Open Settings and turn on Bluetooth"**
+   - AT-SPI finds Settings app
+   - Navigate to Bluetooth panel
+   - Find toggle, check current state, toggle if needed
+   - Verify state changed
+
+#### Acceptance Criteria
+- [ ] Task succeeds even if UI layout changes slightly
+- [ ] Falls back to vision if AT-SPI returns empty tree
+- [ ] Reports progress in real-time (console or overlay)
+- [ ] Handles failures gracefully (retry, alternative action, or clear error)
+
+#### Files to Create
+- `demo_smart_youtube.py` — "Play YouTube video" end-to-end
+- `demo_smart_settings.py` — "Toggle Bluetooth" with verification
+- `demo_smart_discord.py` — "Send message" in Electron app
+
+---
+
+## Updated Task Breakdown
+
+| # | Task | Est. Time | Status |
+|---|------|-----------|--------|
+| 1 | macOS Perception Adapter | 3 days | 🔲 Pending |
+| 2 | macOS Action Adapter | 2 days | 🔲 Pending |
+| 3 | Windows Perception Adapter | 4 days | 🔲 Pending |
+| 4 | Windows Action Adapter | 2 days | 🔲 Pending |
+| 5 | Ghost Overlay (Linux) | 2 days | 🔲 Pending |
+| 6 | Ghost Overlay (macOS) | 1 day | 🔲 Pending |
+| 7 | Ghost Overlay (Windows) | 1 day | 🔲 Pending |
+| 8 | PipeWire Screenshot | 1 day | ✅ Done |
+| 9 | Unified Platform Detection | 0.5 day | 🔲 Pending |
+| 10 | Tests & CI Matrix | 2 days | 🔲 Pending |
+| 11 | Multimodal Vision (llava) | 1 day | 🔲 **Next** |
+| 12 | RALPH + Hybrid Integration | 2 days | 🔲 **Next** |
+| 13 | Smart Task Demos | 2 days | 🔲 **Next** |
+| | **Total** | **~23 days** | |
+
+---
+
+## What Was Completed Today
+
+✅ **ydotool Wayland mouse support** — mouse now moves smoothly on Wayland  
+✅ **ffmpeg screenshot backend** — captures desktop via XWayland  
+✅ **LocalLLM via Ollama HTTP API** — `llama3.2:1b`, no cloud, ~200ms  
+✅ **HybridPerceptionAdapter** — AT-SPI primary + screenshot/LLM fallback  
+✅ **UIElement metadata** — supports fallback context (confidence, reasoning)  
+✅ **Slow mouse animation** — visible cursor movement with `--absolute`  
+✅ **4/5 demos passing** — Calculator, Settings, File Manager, Mouse Cursor  
+
+**Next session focus:** Pick one of Tasks 11, 12, or 13 to implement.
