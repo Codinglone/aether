@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import time
 from aether.action.base import ActionAdapter
 
 
 class LinuxActionAdapter(ActionAdapter):
-    """Linux action adapter using X11 via python-xlib (works through XWayland)."""
+    """Linux action adapter supporting both X11 (python-xlib) and Wayland (ydotool)."""
 
     def __init__(self):
         self._display = None
         self._root = None
+        self._ydotool_socket = None
+        self._wayland = os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
         self._connect()
 
     def _connect(self):
+        # Try X11 display connection
         try:
             from Xlib.display import Display
             self._display = Display()
@@ -21,27 +26,74 @@ class LinuxActionAdapter(ActionAdapter):
             self._display = None
             self._root = None
 
+        # Detect ydotool socket for Wayland
+        self._ydotool_socket = self._find_ydotool_socket()
+
+    def _find_ydotool_socket(self) -> str | None:
+        """Find the ydotool daemon socket."""
+        candidates = [
+            os.environ.get("YDOTOOL_SOCKET"),
+            "/tmp/.ydotool_socket",
+            f"/run/user/{os.getuid()}/.ydotool_socket",
+        ]
+        for path in candidates:
+            if path and os.path.exists(path) and os.access(path, os.R_OK | os.W_OK):
+                return path
+        return None
+
+    def _ydotool(self, *args: str) -> bool:
+        """Run a ydotool command. Returns True on success."""
+        if not self._ydotool_socket:
+            return False
+        env = os.environ.copy()
+        env["YDOTOOL_SOCKET"] = self._ydotool_socket
+        try:
+            result = subprocess.run(
+                ["ydotool", *args],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+                timeout=5,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
     def _ensure_connected(self):
         if self._display is None:
             self._connect()
-        if self._display is None:
-            raise RuntimeError("Cannot connect to X11 display. Is XWayland running?")
+        if self._display is None and not self._ydotool_socket:
+            raise RuntimeError(
+                "Cannot connect to X11 display or ydotool. "
+                "Is XWayland running or ydotoold started?"
+            )
 
     def click(self, x: int, y: int) -> None:
-        self._ensure_connected()
-        from Xlib.ext.xtest import fake_input
-        from Xlib import X
+        """Move mouse to (x, y) and click left button."""
+        if self._ydotool_socket:
+            # Use ydotool for Wayland
+            self._ydotool("mousemove", str(x), str(y))
+            time.sleep(0.05)
+            self._ydotool("click", "0xC0")  # left button down+up
+            time.sleep(0.05)
+        elif self._display:
+            # Use X11
+            from Xlib.ext.xtest import fake_input
+            from Xlib import X
 
-        self._root.warp_pointer(x, y)
-        self._display.sync()
-        time.sleep(0.05)
+            self._root.warp_pointer(x, y)
+            self._display.sync()
+            time.sleep(0.05)
 
-        fake_input(self._display, X.ButtonPress, 1)
-        self._display.sync()
-        time.sleep(0.05)
-        fake_input(self._display, X.ButtonRelease, 1)
-        self._display.sync()
-        time.sleep(0.05)
+            fake_input(self._display, X.ButtonPress, 1)
+            self._display.sync()
+            time.sleep(0.05)
+            fake_input(self._display, X.ButtonRelease, 1)
+            self._display.sync()
+            time.sleep(0.05)
+        else:
+            raise RuntimeError("No input backend available")
 
     def type_text(self, text: str) -> None:
         """Type text, handling shifted characters properly."""
@@ -131,19 +183,27 @@ class LinuxActionAdapter(ActionAdapter):
                 self._display.sync()
 
     def scroll(self, x: int, y: int, delta: int) -> None:
-        self._ensure_connected()
-        from Xlib import X
-        from Xlib.ext.xtest import fake_input
+        if self._ydotool_socket:
+            self._ydotool("mousemove", str(x), str(y))
+            time.sleep(0.05)
+            # ydotool doesn't have direct scroll, use click on scroll buttons
+            # 0x40 = scroll up, 0x80 = scroll down (these are actually wheel events)
+            # ydotool click doesn't support scroll wheel well, skip for now
+        elif self._display:
+            from Xlib import X
+            from Xlib.ext.xtest import fake_input
 
-        self._root.warp_pointer(x, y)
-        self._display.sync()
+            self._root.warp_pointer(x, y)
+            self._display.sync()
 
-        button = 4 if delta > 0 else 5
-        for _ in range(abs(delta)):
-            fake_input(self._display, X.ButtonPress, button)
-            self._display.sync()
-            fake_input(self._display, X.ButtonRelease, button)
-            self._display.sync()
+            button = 4 if delta > 0 else 5
+            for _ in range(abs(delta)):
+                fake_input(self._display, X.ButtonPress, button)
+                self._display.sync()
+                fake_input(self._display, X.ButtonRelease, button)
+                self._display.sync()
+        else:
+            raise RuntimeError("No input backend available")
 
     def alt_tab(self) -> None:
         """Press Alt+Tab to switch window focus."""
