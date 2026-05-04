@@ -105,6 +105,7 @@ def demo_calculator():
         return False
 
     print(f"✅ Found: {app.name}")
+    handle_permission_dialogs()
     
     expression = ["2", "+", "2", "="]
     print(f"   Clicking: {' → '.join(expression)}")
@@ -163,6 +164,7 @@ def demo_settings():
     print(f"✅ Found: {app.name}")
     action.focus_window_by_name("Settings")
     time.sleep(0.5)
+    handle_permission_dialogs()
 
     # Find all toggle buttons
     toggles = []
@@ -220,6 +222,62 @@ def demo_settings():
     return True
 
 
+def handle_permission_dialogs(timeout: float = 3.0):
+    """Auto-allow screen sharing / desktop access dialogs."""
+    import time
+    start = time.time()
+    handled = False
+    
+    # Common dialog titles and button names for screen sharing prompts
+    dialog_titles = [
+        "share your screen", "screen sharing", "remote desktop", 
+        "desktop access", "share", "permission", "allow access"
+    ]
+    allow_buttons = ["share", "allow", "yes", "accept", "grant", "ok"]
+    
+    desktop = pyatspi.Registry.getDesktop(0)
+    for i in range(desktop.childCount):
+        app = desktop.getChildAtIndex(i)
+        if not app or not app.name:
+            continue
+        
+        app_name_lower = app.name.lower()
+        is_permission_dialog = any(title in app_name_lower for title in dialog_titles)
+        
+        if is_permission_dialog:
+            print(f"   🛡️  Detected permission dialog: '{app.name}'")
+            
+            # Try to find and click an allow button
+            for btn_name in allow_buttons:
+                btn = find_element(app, name=btn_name.title(), role="push button") or \
+                      find_element(app, name=btn_name.upper(), role="push button") or \
+                      find_element(app, name=btn_name, role="push button")
+                if btn:
+                    try:
+                        btn.queryAction().doAction(0)
+                        print(f"   ✅ Clicked '{btn_name}' to allow")
+                        handled = True
+                        time.sleep(0.5)
+                        return True
+                    except:
+                        pass
+            
+            # Fallback: try any push button
+            if not handled:
+                try:
+                    for j in range(app.childCount):
+                        child = app.getChildAtIndex(j)
+                        if child.getRoleName() == "push button":
+                            child.queryAction().doAction(0)
+                            print(f"   ✅ Clicked button '{child.name}' on permission dialog")
+                            time.sleep(0.5)
+                            return True
+                except:
+                    pass
+    
+    return False
+
+
 def demo_file_manager():
     print("\n" + "=" * 70)
     print("📁 DEMO 3: File Manager (Create Folder with Dialog)")
@@ -239,10 +297,16 @@ def demo_file_manager():
     action.focus_window_by_name("Nautilus")
     time.sleep(0.5)
 
+    # Check for any permission dialogs that might block automation
+    handle_permission_dialogs()
+
     # Create folder with Ctrl+Shift+N
     print("📁 Creating new folder (Ctrl+Shift+N)...")
     action.hotkey(["ctrl", "shift"], "n")
     time.sleep(2)
+
+    # Check again for permission dialogs that appeared after the hotkey
+    handle_permission_dialogs()
 
     # The dialog may appear as a separate window - try to find and focus it
     print("   Looking for dialog window...")
