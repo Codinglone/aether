@@ -1,6 +1,10 @@
+from pathlib import Path
+
 from aether.macro.models import ElementSelector, Intent, Macro
 from aether.macro.recorder import MacroRecorder
 from aether.core.models import Action
+from tests.harness import MockPerceptionAdapter, MockActionAdapter
+from aether.macro.player import MacroPlayer
 
 
 class TestMacroRecorder:
@@ -39,3 +43,46 @@ class TestMacroRecorder:
         intent = macro.intents[0]
         assert intent.target.role == "text"
         assert intent.target.name == "Input"
+
+
+class TestMacroPlayer:
+    def test_plays_macro_by_name(self):
+        fixture = Path("tests/fixtures/calculator_linux.json")
+        perception = MockPerceptionAdapter(fixture)
+        action = MockActionAdapter()
+        player = MacroPlayer(perception, action)
+
+        macro = Macro(
+            name="click two",
+            intents=[
+                Intent(
+                    action_type="click",
+                    target=ElementSelector(role="push button", name="2"),
+                    params={},
+                )
+            ],
+        )
+        player.play(macro)
+        assert len(action.executed_actions) == 1
+        assert action.executed_actions[0]["type"] == "click"
+
+    def test_self_heal_finds_by_role(self):
+        fixture = Path("tests/fixtures/calculator_linux.json")
+        perception = MockPerceptionAdapter(fixture)
+        action = MockActionAdapter()
+        player = MacroPlayer(perception, action)
+
+        # Target by wrong name, but correct role exists
+        macro = Macro(
+            name="click something",
+            intents=[
+                Intent(
+                    action_type="click",
+                    target=ElementSelector(role="push button", name="NonExistent"),
+                    params={},
+                )
+            ],
+        )
+        player.play(macro)
+        # Should fall back to fuzzy find by role
+        assert len(action.executed_actions) == 1
