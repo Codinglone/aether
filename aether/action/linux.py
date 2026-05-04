@@ -14,6 +14,8 @@ class LinuxActionAdapter(ActionAdapter):
         self._root = None
         self._ydotool_socket = None
         self._wayland = os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+        self._last_mouse_x = None
+        self._last_mouse_y = None
         self._connect()
 
     def _connect(self):
@@ -71,41 +73,48 @@ class LinuxActionAdapter(ActionAdapter):
 
     def move_mouse(self, x: int, y: int, duration: float = 0.0) -> None:
         """Move mouse to (x, y), optionally animating over `duration` seconds."""
-        if self._ydotool_socket:
-            if duration > 0:
-                # Animate: we don't know current position, so we do small steps
-                # from the last known position or from screen center
-                steps = max(int(duration * 20), 1)  # 20 steps per second
-                # Simple approach: just move directly (ydotool is fast)
-                # For visual effect, add small delays
-                for _ in range(steps):
-                    self._ydotool("mousemove", str(x), str(y))
-                    time.sleep(duration / steps)
-            else:
-                self._ydotool("mousemove", str(x), str(y))
-                time.sleep(0.02)
-        elif self._display:
-            from Xlib import X
-            if duration > 0 and self._root:
-                # Get current position
-                root_x = root_y = 0
+        self._ensure_connected()
+        
+        if duration > 0:
+            # Animate the movement
+            steps = max(int(duration * 30), 1)  # 30 steps per second for smooth animation
+            
+            # Get current position
+            if self._last_mouse_x is not None and self._last_mouse_y is not None:
+                start_x, start_y = self._last_mouse_x, self._last_mouse_y
+            elif self._display and self._root:
                 try:
                     pointer = self._root.query_pointer()
-                    root_x, root_y = pointer.root_x, pointer.root_y
+                    start_x, start_y = pointer.root_x, pointer.root_y
                 except Exception:
-                    root_x = root_y = 0
-                steps = max(int(duration * 20), 1)
-                for i in range(1, steps + 1):
-                    t = i / steps
-                    cur_x = int(root_x + (x - root_x) * t)
-                    cur_y = int(root_y + (y - root_y) * t)
+                    start_x, start_y = 960, 540  # Default to screen center
+            else:
+                start_x, start_y = 960, 540
+            
+            # Interpolate and move
+            for i in range(1, steps + 1):
+                t = i / steps
+                cur_x = int(start_x + (x - start_x) * t)
+                cur_y = int(start_y + (y - start_y) * t)
+                
+                if self._ydotool_socket:
+                    self._ydotool("mousemove", "--absolute", str(cur_x), str(cur_y))
+                elif self._display:
                     self._root.warp_pointer(cur_x, cur_y)
                     self._display.sync()
-                    time.sleep(duration / steps)
-            else:
+                
+                time.sleep(duration / steps)
+        else:
+            # Instant move
+            if self._ydotool_socket:
+                self._ydotool("mousemove", "--absolute", str(x), str(y))
+            elif self._display:
                 self._root.warp_pointer(x, y)
                 self._display.sync()
-                time.sleep(0.02)
+        
+        # Update tracked position
+        self._last_mouse_x = x
+        self._last_mouse_y = y
 
     def click(self, x: int, y: int) -> None:
         """Move mouse to (x, y) and click left button."""
@@ -115,13 +124,8 @@ class LinuxActionAdapter(ActionAdapter):
             self._ydotool("click", "0xC0")  # left button down+up
             time.sleep(0.05)
         elif self._display:
-            # Use X11
             from Xlib.ext.xtest import fake_input
             from Xlib import X
-
-            self._root.warp_pointer(x, y)
-            self._display.sync()
-            time.sleep(0.05)
 
             fake_input(self._display, X.ButtonPress, 1)
             self._display.sync()
@@ -221,11 +225,15 @@ class LinuxActionAdapter(ActionAdapter):
 
     def scroll(self, x: int, y: int, delta: int) -> None:
         if self._ydotool_socket:
-            self._ydotool("mousemove", str(x), str(y))
+            self.move_mouse(x, y)
             time.sleep(0.05)
-            # ydotool doesn't have direct scroll, use click on scroll buttons
-            # 0x40 = scroll up, 0x80 = scroll down (these are actually wheel events)
-            # ydotool click doesn't support scroll wheel well, skip for now
+            # ydotool wheel: positive = up, negative = down
+            for _ in range(abs(delta)):
+                if delta > 0:
+                    self._ydotool("mousemove", "--wheel", "0", "1")
+                else:
+                    self._ydotool("mousemove", "--wheel", "0", "-1")
+                time.sleep(0.05)
         elif self._display:
             from Xlib import X
             from Xlib.ext.xtest import fake_input
