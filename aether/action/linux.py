@@ -32,12 +32,10 @@ class LinuxActionAdapter(ActionAdapter):
         from Xlib.ext.xtest import fake_input
         from Xlib import X
 
-        # Move to position
         self._root.warp_pointer(x, y)
         self._display.sync()
         time.sleep(0.05)
 
-        # Press and release left button
         fake_input(self._display, X.ButtonPress, 1)
         self._display.sync()
         time.sleep(0.05)
@@ -46,71 +44,108 @@ class LinuxActionAdapter(ActionAdapter):
         time.sleep(0.05)
 
     def type_text(self, text: str) -> None:
+        """Type text, handling shifted characters properly."""
         self._ensure_connected()
-        from Xlib.ext.xtest import fake_input
         from Xlib import X
+        from Xlib.ext.xtest import fake_input
+        import Xlib.XK
+
+        SHIFT_CHARS = {
+            '+': ('=', True), '*': ('8', True), '/': ('/', False),
+            '-': ('-', False), '(': ('9', True), ')': ('0', True),
+            '^': ('6', True), '%': ('5', True),
+        }
+
+        shift_keycode = self._display.keysym_to_keycode(Xlib.XK.XK_Shift_L)
+        if not shift_keycode:
+            shift_keycode = self._display.keysym_to_keycode(Xlib.XK.XK_Shift_R)
 
         for char in text:
-            # Simple ASCII typing
-            if char.isalpha():
-                keycode = self._display.keysym_to_keycode(ord(char))
-                if keycode:
-                    fake_input(self._display, X.KeyPress, keycode)
+            needs_shift = False
+            base_char = char
+
+            if char in SHIFT_CHARS:
+                base_char, needs_shift = SHIFT_CHARS[char]
+            elif char.isupper():
+                base_char = char.lower()
+                needs_shift = True
+
+            keysym = ord(base_char)
+            keycode = self._display.keysym_to_keycode(keysym)
+
+            if keycode:
+                if needs_shift and shift_keycode:
+                    fake_input(self._display, X.KeyPress, shift_keycode)
                     self._display.sync()
-                    fake_input(self._display, X.KeyRelease, keycode)
+
+                fake_input(self._display, X.KeyPress, keycode)
+                self._display.sync()
+                fake_input(self._display, X.KeyRelease, keycode)
+                self._display.sync()
+
+                if needs_shift and shift_keycode:
+                    fake_input(self._display, X.KeyRelease, shift_keycode)
                     self._display.sync()
-            elif char == ' ':
-                keycode = self._display.keysym_to_keycode(0x0020)
-                if keycode:
-                    fake_input(self._display, X.KeyPress, keycode)
-                    self._display.sync()
-                    fake_input(self._display, X.KeyRelease, keycode)
-                    self._display.sync()
-            time.sleep(0.01)
+
+            time.sleep(0.05)
 
     def hotkey(self, modifiers: list[str], key: str) -> None:
         self._ensure_connected()
-        from Xlib.ext.xtest import fake_input
         from Xlib import X
+        from Xlib.ext.xtest import fake_input
+        import Xlib.XK
 
         mod_map = {
-            "ctrl": X.ControlMask,
-            "shift": X.ShiftMask,
-            "alt": X.Mod1Mask,
-            "super": X.Mod4Mask,
+            "ctrl": Xlib.XK.XK_Control_L,
+            "shift": Xlib.XK.XK_Shift_L,
+            "alt": Xlib.XK.XK_Alt_L,
+            "super": Xlib.XK.XK_Super_L,
         }
 
-        # Get modifier keycodes
         mod_keycodes = []
         for mod in modifiers:
             mod_lower = mod.lower()
             if mod_lower in mod_map:
-                # Find a keycode for this modifier
-                # This is a simplification - proper implementation would use XKB
-                pass
+                kc = self._display.keysym_to_keycode(mod_map[mod_lower])
+                if kc:
+                    mod_keycodes.append(kc)
 
-        # Get key keycode
         keycode = None
         if len(key) == 1:
             keycode = self._display.keysym_to_keycode(ord(key))
+        elif hasattr(Xlib.XK, f'XK_{key}'):
+            keycode = self._display.keysym_to_keycode(getattr(Xlib.XK, f'XK_{key}'))
 
         if keycode:
+            for kc in mod_keycodes:
+                fake_input(self._display, X.KeyPress, kc)
+                self._display.sync()
+
             fake_input(self._display, X.KeyPress, keycode)
             self._display.sync()
             fake_input(self._display, X.KeyRelease, keycode)
             self._display.sync()
 
+            for kc in reversed(mod_keycodes):
+                fake_input(self._display, X.KeyRelease, kc)
+                self._display.sync()
+
     def scroll(self, x: int, y: int, delta: int) -> None:
         self._ensure_connected()
-        from Xlib.ext.xtest import fake_input
         from Xlib import X
+        from Xlib.ext.xtest import fake_input
 
         self._root.warp_pointer(x, y)
         self._display.sync()
 
-        button = 4 if delta > 0 else 5  # 4 = scroll up, 5 = scroll down
+        button = 4 if delta > 0 else 5
         for _ in range(abs(delta)):
             fake_input(self._display, X.ButtonPress, button)
             self._display.sync()
             fake_input(self._display, X.ButtonRelease, button)
             self._display.sync()
+
+    def alt_tab(self) -> None:
+        """Press Alt+Tab to switch window focus."""
+        self.hotkey(["alt"], "Tab")
+        time.sleep(0.3)
