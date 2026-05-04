@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional, Set, Tuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Bounds(BaseModel):
@@ -25,7 +25,7 @@ class UIElement(BaseModel):
 
 
 class UIMap(BaseModel):
-    timestamp: datetime = datetime.utcnow()
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     screen_size: Tuple[int, int]
     elements: list[UIElement]
     active_window: Optional[UIElement] = None
@@ -47,14 +47,14 @@ class ActionPlan(BaseModel):
 
 class VerificationResult(BaseModel):
     success: bool
-    confidence: float
+    confidence: float = Field(ge=0.0, le=1.0)
     matched_strategy: str
     details: Optional[str] = None
 
 
 class ActionRecord(BaseModel):
     action: Action
-    timestamp: datetime = datetime.utcnow()
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class TaskResult(BaseModel):
