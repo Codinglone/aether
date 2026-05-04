@@ -69,12 +69,49 @@ class LinuxActionAdapter(ActionAdapter):
                 "Is XWayland running or ydotoold started?"
             )
 
+    def move_mouse(self, x: int, y: int, duration: float = 0.0) -> None:
+        """Move mouse to (x, y), optionally animating over `duration` seconds."""
+        if self._ydotool_socket:
+            if duration > 0:
+                # Animate: we don't know current position, so we do small steps
+                # from the last known position or from screen center
+                steps = max(int(duration * 20), 1)  # 20 steps per second
+                # Simple approach: just move directly (ydotool is fast)
+                # For visual effect, add small delays
+                for _ in range(steps):
+                    self._ydotool("mousemove", str(x), str(y))
+                    time.sleep(duration / steps)
+            else:
+                self._ydotool("mousemove", str(x), str(y))
+                time.sleep(0.02)
+        elif self._display:
+            from Xlib import X
+            if duration > 0 and self._root:
+                # Get current position
+                root_x = root_y = 0
+                try:
+                    pointer = self._root.query_pointer()
+                    root_x, root_y = pointer.root_x, pointer.root_y
+                except Exception:
+                    root_x = root_y = 0
+                steps = max(int(duration * 20), 1)
+                for i in range(1, steps + 1):
+                    t = i / steps
+                    cur_x = int(root_x + (x - root_x) * t)
+                    cur_y = int(root_y + (y - root_y) * t)
+                    self._root.warp_pointer(cur_x, cur_y)
+                    self._display.sync()
+                    time.sleep(duration / steps)
+            else:
+                self._root.warp_pointer(x, y)
+                self._display.sync()
+                time.sleep(0.02)
+
     def click(self, x: int, y: int) -> None:
         """Move mouse to (x, y) and click left button."""
+        self.move_mouse(x, y)
+        time.sleep(0.05)
         if self._ydotool_socket:
-            # Use ydotool for Wayland
-            self._ydotool("mousemove", str(x), str(y))
-            time.sleep(0.05)
             self._ydotool("click", "0xC0")  # left button down+up
             time.sleep(0.05)
         elif self._display:
