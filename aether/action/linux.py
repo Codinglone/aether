@@ -149,3 +149,41 @@ class LinuxActionAdapter(ActionAdapter):
         """Press Alt+Tab to switch window focus."""
         self.hotkey(["alt"], "Tab")
         time.sleep(0.3)
+
+    def focus_window_by_name(self, name_substring: str) -> bool:
+        """Find and focus an X11 window by name substring."""
+        self._ensure_connected()
+        from Xlib import X
+
+        # Search all windows recursively
+        def search_window(window, depth=0):
+            try:
+                wm_name = window.get_wm_name()
+                if wm_name and name_substring.lower() in str(wm_name).lower():
+                    return window
+            except:
+                pass
+            
+            try:
+                tree = window.query_tree()
+                for child in tree.children:
+                    found = search_window(child, depth + 1)
+                    if found:
+                        return found
+            except:
+                pass
+            return None
+
+        target = search_window(self._root)
+        if target:
+            try:
+                # Raise window and set focus
+                target.configure(stack_mode=X.Above)
+                self._display.sync()
+                self._display.set_input_focus(target, X.RevertToParent, X.CurrentTime)
+                self._display.sync()
+                time.sleep(0.3)
+                return True
+            except Exception:
+                pass
+        return False
