@@ -1,0 +1,46 @@
+{
+  "name": "Calculator: 2 + 2",
+  "platform": "linux",
+  "app": "gnome-calculator",
+  "initial_state": {
+    "screen_size": [1920, 1080],
+    "elements": [
+      {
+        "id": "win1",
+        "role": "frame",
+        "name": "Calculator",
+        "bounds": {"x": 100, "y": 100, "width": 300, "height": 400},
+        "state": ["active"],
+        "children": [
+          {
+            "id": "display",
+            "role": "text",
+            "name": "0",
+            "bounds": {"x": 110, "y": 110, "width": 280, "height": 40},
+            "state": ["focused"],
+            "parent_id": "win1"
+          },
+          {
+            "id": "btn2",
+            "role": "push button",
+            "name": "2",
+            "bounds": {"x": 120, "y": 200, "width": 50, "height": 50},
+            "state": ["sensitive"],
+            "parent_id": "win1"
+          }
+        ]
+      }
+    ]
+  },
+  "task": "Calculate 2 + 2",
+  "expected_actions": [
+    {"type": "click", "params": {"x": 145, "y": 225}}
+  ],
+  "transitions": [
+    {"after_action": 0, "element_id": "display", "new_name": "2"}
+  ],
+  "success_condition": {
+    "element_id": "display",
+    "name_equals": "4"
+  }
+}
