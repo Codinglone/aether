@@ -29,8 +29,8 @@ class Verifier:
         )
 
     def _check_tree_diff(self, before: UIMap, after: UIMap) -> VerificationResult:
-        before_map = {e.id: e for e in before.elements}
-        after_map = {e.id: e for e in after.elements}
+        before_map = self._flatten_elements(before.elements)
+        after_map = self._flatten_elements(after.elements)
 
         changed = []
         for eid, after_elem in after_map.items():
@@ -47,6 +47,13 @@ class Verifier:
                 details=f"Elements changed: {changed}",
             )
         return VerificationResult(success=False, confidence=0.0, matched_strategy="tree_diff")
+
+    def _flatten_elements(self, elements):
+        result = {}
+        for elem in elements:
+            result[elem.id] = elem
+            result.update(self._flatten_elements(elem.children))
+        return result
 
     def _check_focus_change(self, before: UIMap, after: UIMap) -> VerificationResult:
         if before.focused_element != after.focused_element:

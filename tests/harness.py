@@ -12,11 +12,44 @@ class MockPerceptionAdapter(PerceptionAdapter):
     def __init__(self, fixture_path: Path):
         with open(fixture_path) as f:
             self.fixture = json.load(f)
-        self._uimap = UIMap(**self.fixture["initial_state"])
-        self.state_index = 0
+        self.states = [UIMap(**self.fixture["initial_state"])]
+        self.capture_index = 0
+        self.transition_index = 0
+        self.transitions = self.fixture.get("transitions", [])
+
+    @property
+    def _uimap(self) -> UIMap:
+        return self.states[-1]
 
     def capture(self) -> UIMap:
-        return self._uimap
+        if self.capture_index >= len(self.states):
+            new_state = self.states[-1].model_copy(deep=True)
+            if self.transition_index < len(self.transitions):
+                self._apply_transition(new_state, self.transitions[self.transition_index])
+                self.transition_index += 1
+            self.states.append(new_state)
+        result = self.states[self.capture_index]
+        self.capture_index += 1
+        return result
+
+    def _apply_transition(self, state, transition):
+        element_id = transition.get("element_id")
+        new_name = transition.get("new_name")
+        new_state = transition.get("new_state")
+
+        def _update(elements):
+            for elem in elements:
+                if elem.id == element_id:
+                    if new_name is not None:
+                        elem.name = new_name
+                    if new_state is not None:
+                        elem.state = set(new_state)
+                    return True
+                if _update(elem.children):
+                    return True
+            return False
+
+        _update(state.elements)
 
     def get_active_window(self) -> Optional[UIElement]:
         for elem in self._uimap.elements:
