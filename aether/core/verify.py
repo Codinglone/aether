@@ -74,3 +74,12 @@ class Verifier:
                 details="Active window changed",
             )
         return VerificationResult(success=False, confidence=0.0, matched_strategy="window")
+
+
+class DummyVerifier(Verifier):
+    """Always-succeed verifier for demos."""
+
+    def verify(self, before, after, action):
+        return VerificationResult(
+            success=True, confidence=1.0, matched_strategy="dummy"
+        )

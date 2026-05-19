@@ -59,3 +59,10 @@ class SafetyChecker:
         if len(text) > self.MAX_TYPE_LENGTH:
             return False, f"Type text length {len(text)} exceeds max {self.MAX_TYPE_LENGTH}"
         return True, None
+
+
+class DummySafetyChecker(SafetyChecker):
+    """Always-succeed safety checker for demos."""
+
+    def check(self, action):
+        return True, None

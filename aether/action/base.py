@@ -13,6 +13,10 @@ class ActionAdapter(ABC):
         ...
 
     @abstractmethod
+    def key(self, keyname: str) -> None:
+        ...
+
+    @abstractmethod
     def hotkey(self, modifiers: list[str], key: str) -> None:
         ...
 
