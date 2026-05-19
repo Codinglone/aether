@@ -9,3 +9,4 @@ knowledge.md
 .coverage
 htmlcov/
 .superpowers/
+.worktrees/
