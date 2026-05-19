@@ -1,140 +1,214 @@
 # Aether-Native Progress Log
 
 **Date:** 2026-05-19
-**Session:** Design pivot — abandon Rust/cross-platform fantasy, focus on closing the RALPH loop
-**Commit:** (docs update)
+**Session:** Full cloud agent architecture — OpenRouter vision + planning, ydotool execution
+**Branch:** `feature/close-the-loop`
+**Status:** Architecture complete, tested with limitations
 
 ---
 
-## Honest Assessment
+## What Was Built Today
 
-The project had drifted into fantasy land. The blueprint described Rust, `libei`, `pipewire-rs`, cross-platform adapters, Ghost Overlay, and Voice Control. The reality was Python, `ydotool`, 12 copy-paste YouTube demos, and a `StubBrain` that hardcoded "click the first button."
+### 1. Full Cloud Agent (`demo_full_cloud_agent.py`)
 
-**Decision:** Stop pretending. Make the Python/Linux prototype actually work.
-
-### What Was Wrong
-
-1. **No real brain.** `StubBrain` didn't reason; it just clicked the first push button it found.
-2. **Hybrid perception not wired into the loop.** `HybridPerceptionAdapter` existed but was never used by `RalphLoop`.
-3. **Vision fallback was fake.** `LocalLLM.analyze_screenshot()` fed a *file path as text* to a 1B text-only model and asked it to guess coordinates.
-4. **No persistence.** Memory was in-memory only. No `knowledge.md`, no `progress.json`.
-5. **0% test coverage on real code.** All tests exercised mocks. The Linux action/perception code was completely untested.
-6. **12 demos, 0 verification.** Every demo ended with "look at the screen and see if it worked."
-
-### New Design Philosophy
-
-- **One OS:** Linux. macOS/Windows are future possibilities, not current goals.
-- **One Language:** Python. Rust was a premature optimization.
-- **Close the loop:** Perceive → Reason → Act → Verify → Learn. All five steps must work.
-- **Verify or delete:** Every task must have a pass/fail assertion. No more manual eyeballing.
-
----
-
-## New Architecture (Simplified)
+A complete end-to-end agent loop using cloud APIs for intelligence and local tools for execution:
 
 ```
-User Task
-    |
-    v
-+-----------+     +------------------+     +---------+
-|  RALPH    |<--->| Hybrid Perception|<--->| AT-SPI  |
-|  Loop     |     | (AT-SPI + llava) |     | Primary |
-+-----------+     +------------------+     +---------+
-    |  ^                |
-    |  |                v
-    |  |           +---------+
-    |  |           |  llava  |
-    |  |           |Fallback |
-    |  |           +---------+
-    |  |
-    v  |
-+-----------+     +---------+     +----------+
-|  Local    |     |  Linux  |     | Persist  |
-|  LLM      |     | Action  |     | Memory   |
-|  Brain    |     |         |     |          |
-+-----------+     +---------+     +----------+
+Screenshot → OpenRouter Vision (gpt-4o-mini) → OpenRouter Plan (gpt-4o-mini) → ydotool Action
+     ↑                                                                  ↓
+     └────────────────── Verify (DesktopVerifier) ──────────────────────┘
 ```
 
----
+**Performance:**
+- Vision: ~8-12s per screenshot (640px PNG)
+- Planning: ~3-5s per action plan
+- Action execution: ~0.3s (ydotool)
+- Full loop: ~10-15s per iteration
 
-## Revised Task List (Priority Order)
+### 2. New Components
 
-### Phase A: Close the Loop (Week 1) ✅ COMPLETE
+| Component | File | Purpose |
+|---|---|---|
+| `VisionFirstPerceptionAdapter` | `aether/perception/vision_first.py` | Cloud vision (OpenRouter) with AT-SPI fallback |
+| `OpenRouterBrain` | `aether/brain/openrouter.py` | Cloud planning via gpt-4o-mini |
+| `YdotoolActionAdapter` | `aether/action/ydotool.py` | Wayland-native mouse/keyboard |
+| `DesktopVerifier` | `aether/core/desktop_verify.py` | Real-time verification (processes, audio, brightness) |
+| `OpenRouterVisionClient` | `aether/perception/openrouter_vision.py` | Reusable OpenRouter vision client |
 
-- [x] **Task 1: Real prompt template (`planner.j2`)**
-- [x] **Task 2: `LocalLLMBrain` replaces `StubBrain`**
-  - Real prompt rendering, JSON parsing with retry, `explain_failure()`
-  - Network error handling, template file error handling
-- [x] **Task 3: `llava` vision fallback**
-  - Base64-encoded screenshot images sent to Ollama `/api/generate`
-  - Model state leak fixed (restore in `finally` block)
-- [x] **Task 4: Persistent `SessionMemory`**
-  - Loads/saves `~/.local/share/aether/memory.json` atomically
-  - `record_action()`, `record_failure()`, `mark_task_done()`
-- [x] **Task 5: `KnowledgeStore`**
-  - Writes to `knowledge.md` + `knowledge.json`
-  - Injects learned tips into LLM prompt
-- [x] **Task 6: Wire everything into `RalphLoop`**
-  - Knowledge injection before reasoning
-  - Persistent memory on every action
-  - Knowledge learned on successful task completion
-  - 3 demo scripts using closed loop (calculator, settings, browser)
+### 3. Key Features
 
-### Phase B: Verified End-to-End Tasks (Week 2) — IN PROGRESS
+- **Retry logic**: Vision retries 3x on HTTP errors, auto-resizes screenshot on 400 errors
+- **Coordinate scaling**: Screenshot coordinates (320-640px) scaled to actual display (3072x1728)
+- **App detection**: Vision model identifies foreground app (Brave, Firefox, VS Code, etc.)
+- **Focus enforcement**: Before typing, checks if target app is active; switches with `alt+Tab` if not
+- **Task completion**: Detects audio playback from target app (e.g. Brave) to determine if video is playing
+- **Non-blocking shell**: Opens browsers via `Popen` without hanging the loop
 
-- [ ] **Task 7: Calculator integration test**
-  - Open calculator, compute 2+2, verify display shows 4
-- [ ] **Task 8: Settings integration test**
-  - Open GNOME Settings, toggle Bluetooth, verify state changed
-- [ ] **Task 9: Browser integration test**
-  - Open Brave, navigate to example.com, verify page loaded
-- [ ] **Task 10: Delete old demos**
-  - Keep `demo.py` as smoke test, remove 12 copy-paste YouTube demos
+### 4. Test Results
 
-### Phase C: Polish (Week 3)
+**Task:** "Open Brave browser, go to YouTube, search for 'International love chris brown', and play the first video"
 
-- [ ] **Task 11: Screenshot diff verifier**
-  - Perceptual hashing fallback when tree diff is inconclusive
-- [ ] **Task 12: Improve error handling and retry logic**
-  - Better messages when `ydotoold` is not running
-  - "Stuck" detection (same state 3x in a row)
-- [ ] **Task 13: Update all documentation**
-  - Inline docstrings for all public methods
-- [ ] **Task 14: CLI command `aether run "task description"`**
-  - Make `run` actually execute the RALPH loop
-
-### Phase D: Testing & Quality
-
-- [ ] **Task 15: Unit test coverage >90% on core modules**
-  - Mock `urllib.request` for `local_llm.py`
-  - Mock `subprocess` for `screenshot.py`
-  - Mock AT-SPI for `hybrid.py`
-- [ ] **Task 16: Integration test harness**
-  - Runs e2e tasks in a controlled desktop session
-- [ ] **Task 17: ruff + mypy clean**
-  - Fix all lint and type errors
+- ✅ Vision queries: 100% success rate (was ~20% before retry logic)
+- ✅ Brave opens via shell command
+- ✅ ydotool executes clicks, typing, hotkeys
+- ✅ DesktopVerifier detects audio playback
+- ⚠️ **Focus issue**: Agent sometimes types into wrong window when Brave is not foreground
+- ⚠️ **Loop termination**: Returns "success" after max retries even if task incomplete
+- ⚠️ **Coordinate accuracy**: Click coordinates from vision don't always hit intended targets
 
 ---
 
-## Key Decisions
+## Current Blockers
 
-1. **Python, not Rust.** The existing Python stack works. Rewriting would be 6 months of zero user value.
-2. **Linux, not cross-platform.** One working OS beats three broken stubs.
-3. **Ollama HTTP API over `llama-cpp-python`.** HTTP is simpler, no complex bindings, easy to mock in tests.
-4. **3 verified tasks over 12 demos.** Quality over quantity. Every task must prove itself.
-5. **Persistence is not optional.** An agent that forgets everything on exit is not an agent.
+### 1. OpenRouter Credits Depleted
+- **Status:** `402 Payment Required` on planning calls
+- **Impact:** Agent cannot run without credits
+- **Mitigation:** Switch to local Ollama for planning (llama3.2:1b), keep OpenRouter for vision only
+- **Cost so far:** ~50 API calls (vision + planning) consumed ~$2-3
 
-## What Was Fixed
+### 2. Window Focus Management
+- **Problem:** Agent types into whatever window is focused, not necessarily Brave
+- **Root cause:** `ydotool` synthetic events go to focused window; shell command opens Brave but doesn't focus it
+- **Attempted fix:** `_enforce_app_focus()` checks active app before typing, switches with `alt+Tab`
+- **Issue:** Vision-detected app name is unreliable; `active_window` often `None` or "unknown"
 
-- `StubBrain` deleted, `LocalLLMBrain` generates real action plans from UI state + task
-- `HybridPerceptionAdapter` wired into `RalphLoop` as default perception
-- `LocalLLM.analyze_screenshot_vision()` sends actual base64-encoded images
-- `SessionMemory` persists to JSON, survives across process restarts
-- `KnowledgeStore` writes human-readable `knowledge.md` + machine-readable JSON
-- 3 new loop-based demos with proper verification
+### 3. Coordinate Scaling
+- **Problem:** Vision model returns coordinates in 1920x1080 screenshot space, but display is 3072x1728
+- **Attempted fix:** `_scale_coords()` multiplies by display/screenshot ratio
+- **Issue:** Portal screenshots are 1920x1080, but ffmpeg x11grab captures black screen; coordinate mapping uncertain
+
+### 4. Screenshot Capture Annoyance
+- **Problem:** GNOME portal screenshot triggers sound + visual flash every capture
+- **Impact:** Highly annoying for continuous agent loops
+- **Options:**
+  - Suppress GNOME sounds temporarily
+  - Use silent `ffmpeg x11grab` (captures black on Wayland)
+  - Use `kmsgrab` with sudo (raw framebuffer, no compositor)
+  - **Continuous video recording** with ffmpeg (background stream, sample frames on demand)
 
 ---
 
-## Previous Progress
+## Ideas & Next Steps
 
-See `docs/superpowers/plans/2026-05-04-aether-native-phase0.md` and `2026-05-04-aether-native-phase1.md` for historical implementation details. Those documents describe what was built; this log describes what comes next.
+### Short Term (This Week)
+
+1. **Switch to hybrid cloud/local**
+   - OpenRouter for vision only (fast, multimodal)
+   - Local Ollama (llama3.2:1b) for planning (free, fast enough on CPU)
+   - Reduces API cost by ~60%
+
+2. **Fix focus management**
+   - Use `wmctrl` or `xdotool` to explicitly raise/focus Brave window
+   - Or: always click on the target input field before typing
+   - Or: use `ydotool` to click on the browser window to focus it first
+
+3. **Better task completion detection**
+   - Check for specific UI elements ("Pause" button visible = video playing)
+   - Check URL bar contents (contains "youtube.com/watch")
+   - Check process command line (Brave launched with YouTube URL)
+
+### Medium Term (Next 2 Weeks)
+
+4. **Silent screenshot capture**
+   - Implement ffmpeg-based capture as primary (no portal notifications)
+   - Add `silent=True` parameter to `VisionFirstPerceptionAdapter`
+   - Investigate PipeWire screen capture for Wayland-native silent capture
+
+5. **Continuous video recording**
+   - Background ffmpeg process records low-res stream (320x180 @ 0.5fps)
+   - Agent samples latest frame when needed (no capture delay)
+   - Enables real-time observation without per-frame API costs
+   - Tradeoff: Constant CPU usage (~5-10%)
+
+6. **Mouse movement visualization**
+   - Show where the agent is clicking in real-time
+   - Helps debug coordinate accuracy issues
+   - Could overlay a cursor indicator
+
+### Long Term (Next Month)
+
+7. **Learned action sequences**
+   - Cache successful action sequences for common tasks
+   - "Open YouTube and search" becomes a single learned macro
+   - Reduces API calls and improves speed
+
+8. **Multi-app workflows**
+   - Copy text from one app, paste into another
+   - Drag-and-drop between windows
+   - Requires better window management
+
+9. **Error recovery**
+   - Detect when agent is stuck (same state 3x in a row)
+   - Automatic screenshot + human intervention request
+   - Fallback to simpler strategies
+
+---
+
+## Architecture Evolution
+
+### Original Design (Local Only)
+```
+AT-SPI → Local LLM (nemotron3:33b) → ydotool
+  ↑___________________________________↓
+```
+**Issue:** nemotron3:33b is ~60s per plan; llava:7b is ~180s per vision
+
+### Current Design (Full Cloud)
+```
+Screenshot → OpenRouter Vision → OpenRouter Plan → ydotool
+     ↑_________________________________________________↓
+```
+**Issue:** Fast but expensive; credits deplete quickly
+
+### Target Design (Hybrid)
+```
+Screenshot → OpenRouter Vision (fast, multimodal) → Local Plan (llama3.2:1b) → ydotool
+     ↑______________________________________________________________↓
+```
+**Benefit:** Best of both worlds; fast vision + free planning
+
+---
+
+## Key Changes Today
+
+| File | Change |
+|---|---|
+| `aether/perception/vision_first.py` | OpenRouter cloud vision with retry logic, coordinate scaling, app detection |
+| `aether/brain/openrouter.py` | Cloud planning with single-action-per-plan, better prompts |
+| `aether/action/ydotool.py` | Wayland-native action adapter with `key()` method |
+| `aether/core/loop.py` | Re-plan after every action, focus enforcement, task completion detection |
+| `aether/core/desktop_verify.py` | Real verifier (processes, audio, brightness, window changes) |
+| `aether/core/safety.py` | Added `DummySafetyChecker` |
+| `aether/core/verify.py` | Added `DummyVerifier` |
+| `demo_full_cloud_agent.py` | End-to-end cloud agent demo |
+| `aether_deskctl.sh` | Bash helper for ydotool + screenshot |
+
+---
+
+## Lessons Learned
+
+1. **Cloud vision is worth it.** llava:7b on CPU = ~180s/image. OpenRouter gpt-4o-mini = ~10s/image. The speed difference is massive.
+2. **Single-action planning is essential.** Multi-action plans based on stale screenshots always fail when the UI changes.
+3. **Focus management is hard.** Typing goes to whatever window is focused. Always verify focus before text input.
+4. **OpenRouter credits go fast.** 50 API calls = ~$2-3. For development, use local models for planning.
+5. **Portal screenshots are annoying.** The notification sound + flash every capture is disruptive. Need silent capture.
+6. **Task completion detection needs work.** Checking audio playback is not enough — need UI element detection ("Pause" button = playing).
+
+---
+
+## Commits Today
+
+- `74e4687` — feat: vision-first hybrid agent architecture
+- `30a7b67` — feat: full cloud agent with OpenRouter vision + planning
+- `6ff1be1` — feat: improved cloud agent with real verifier and shell support
+- `21a1d15` — fix: OpenRouter vision retry logic with smaller screenshot fallback
+
+---
+
+## Next Session Priority
+
+1. ⭐ **Switch planning to local Ollama** (llama3.2:1b) — reduce API costs
+2. ⭐ **Implement silent screenshot capture** — ffmpeg x11grab or kmsgrab
+3. Fix window focus before typing
+4. Better task completion detection (check for "Pause" button, URL bar)
+5. Test with Brave already open (no shell needed)
