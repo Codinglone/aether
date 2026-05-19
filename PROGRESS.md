@@ -44,7 +44,31 @@ Screenshot → OpenRouter Vision (gpt-4o-mini) → OpenRouter Plan (gpt-4o-mini)
 - **Task completion**: Detects audio playback from target app (e.g. Brave) to determine if video is playing
 - **Non-blocking shell**: Opens browsers via `Popen` without hanging the loop
 
-### 4. Test Results
+### 4. Continuous Video Recording (`aether/perception/video_recorder.py`)
+
+A background ffmpeg process continuously captures the screen:
+
+```python
+recorder = VideoRecorder(width=640, fps=0.5)
+recorder.start()
+# ... anytime ...
+frame_path = recorder.get_latest_frame()  # Instant, no capture delay
+```
+
+**How it works:**
+1. ffmpeg runs in background with `-update 1` (continuously overwrites same file)
+2. Frame is always available in `/tmp/aether_latest_frame.jpg`
+3. No per-capture delay — just read the file
+4. No GNOME portal notifications for X11/XWayland apps
+
+**Limitations:**
+- On pure Wayland: x11grab captures black, auto-switches to portal (notifications)
+- Portal still triggers sound + flash on Wayland native apps
+- Constant CPU usage: ~5% for 640px @ 0.5fps
+
+**Next:** Suppress GNOME sounds temporarily during portal capture
+
+### 5. Test Results
 
 **Task:** "Open Brave browser, go to YouTube, search for 'International love chris brown', and play the first video"
 
