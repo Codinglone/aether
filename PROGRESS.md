@@ -59,87 +59,60 @@ User Task
 
 ## Revised Task List (Priority Order)
 
-### Phase A: Close the Loop (Week 1)
+### Phase A: Close the Loop (Week 1) ✅ COMPLETE
 
-- [ ] **Task 1: Replace `StubBrain` with `LocalLLMBrain`**
-  - Implement real prompt rendering from `prompts/planner.j2`
-  - Parse JSON ActionPlan from LLM response with validation + retry
-  - Wire into `RalphLoop`
+- [x] **Task 1: Real prompt template (`planner.j2`)**
+- [x] **Task 2: `LocalLLMBrain` replaces `StubBrain`**
+  - Real prompt rendering, JSON parsing with retry, `explain_failure()`
+  - Network error handling, template file error handling
+- [x] **Task 3: `llava` vision fallback**
+  - Base64-encoded screenshot images sent to Ollama `/api/generate`
+  - Model state leak fixed (restore in `finally` block)
+- [x] **Task 4: Persistent `SessionMemory`**
+  - Loads/saves `~/.local/share/aether/memory.json` atomically
+  - `record_action()`, `record_failure()`, `mark_task_done()`
+- [x] **Task 5: `KnowledgeStore`**
+  - Writes to `knowledge.md` + `knowledge.json`
+  - Injects learned tips into LLM prompt
+- [x] **Task 6: Wire everything into `RalphLoop`**
+  - Knowledge injection before reasoning
+  - Persistent memory on every action
+  - Knowledge learned on successful task completion
+  - 3 demo scripts using closed loop (calculator, settings, browser)
 
-- [ ] **Task 2: Make `HybridPerceptionAdapter` the default**
-  - Inject into `RalphLoop` constructor
-  - Ensure AT-SPI primary path is used first
+### Phase B: Verified End-to-End Tasks (Week 2) — IN PROGRESS
 
-- [ ] **Task 3: Real vision fallback with `llava`**
-  - `ollama pull llava`
-  - Encode screenshot as base64 PNG
-  - POST to `/api/generate` with `images` field
-  - Parse coordinates from response
-
-- [ ] **Task 4: Persistent memory**
-  - `SessionMemory` loads/saves `~/.local/share/aether/memory.json`
-  - Atomic writes
-  - Stores history, failed_attempts, progress, knowledge
-
-- [ ] **Task 5: KnowledgeStore**
-  - Writes to `knowledge.md` (human-readable) + `knowledge.json` (machine-readable)
-  - Injects relevant knowledge into LLM prompt before reasoning
-
-### Phase B: Verified End-to-End Tasks (Week 2)
-
-- [ ] **Task 6: Calculator e2e test**
+- [ ] **Task 7: Calculator integration test**
   - Open calculator, compute 2+2, verify display shows 4
-  - AT-SPI primary path
-  - Integration test with `@pytest.mark.integration`
-
-- [ ] **Task 7: YouTube fullscreen e2e test**
-  - Open Brave, navigate to known video, make fullscreen
-  - Hybrid perception (AT-SPI for browser, vision/keyboard fallback for player)
-  - Verify via screenshot diff (no window decorations)
-
-- [ ] **Task 8: Bluetooth toggle e2e test**
-  - Open GNOME Settings, navigate to Bluetooth, toggle switch
-  - Verify via AT-SPI state change
-
-- [ ] **Task 9: Delete 12 old demos, keep 1 sanity demo**
-  - `demo.py` as quick smoke test
-  - All others replaced by integration tests
+- [ ] **Task 8: Settings integration test**
+  - Open GNOME Settings, toggle Bluetooth, verify state changed
+- [ ] **Task 9: Browser integration test**
+  - Open Brave, navigate to example.com, verify page loaded
+- [ ] **Task 10: Delete old demos**
+  - Keep `demo.py` as smoke test, remove 12 copy-paste YouTube demos
 
 ### Phase C: Polish (Week 3)
 
-- [ ] **Task 10: Screenshot diff verifier**
+- [ ] **Task 11: Screenshot diff verifier**
   - Perceptual hashing fallback when tree diff is inconclusive
-  - Needed for "did the video actually go fullscreen?"
-
-- [ ] **Task 11: Improve error handling and retry logic**
+- [ ] **Task 12: Improve error handling and retry logic**
   - Better messages when `ydotoold` is not running
-  - Retry on `ydotool` command drop
   - "Stuck" detection (same state 3x in a row)
-
-- [ ] **Task 12: Update all documentation**
-  - README.md (done)
-  - Aether-Native_Blueprint.md (done)
-  - Design spec (done)
-  - Inline docstrings
-
-- [ ] **Task 13: CLI command `aether run "task description"`**
-  - Currently `aether` only has stub commands
+- [ ] **Task 13: Update all documentation**
+  - Inline docstrings for all public methods
+- [ ] **Task 14: CLI command `aether run "task description"`**
   - Make `run` actually execute the RALPH loop
 
 ### Phase D: Testing & Quality
 
-- [ ] **Task 14: Unit test coverage >90% on core modules**
+- [ ] **Task 15: Unit test coverage >90% on core modules**
   - Mock `urllib.request` for `local_llm.py`
   - Mock `subprocess` for `screenshot.py`
   - Mock AT-SPI for `hybrid.py`
-
-- [ ] **Task 15: Integration test harness**
+- [ ] **Task 16: Integration test harness**
   - Runs e2e tasks in a controlled desktop session
-  - Reports ALR score
-
-- [ ] **Task 16: ruff + mypy clean**
-  - Fix all lint errors
-  - Fix all type errors
+- [ ] **Task 17: ruff + mypy clean**
+  - Fix all lint and type errors
 
 ---
 
@@ -151,15 +124,14 @@ User Task
 4. **3 verified tasks over 12 demos.** Quality over quantity. Every task must prove itself.
 5. **Persistence is not optional.** An agent that forgets everything on exit is not an agent.
 
-## Known Issues (To Fix)
+## What Was Fixed
 
-- `StubBrain` hardcodes actions
-- `HybridPerceptionAdapter` not wired into `RalphLoop`
-- `LocalLLM.analyze_screenshot()` is text-only fakery
-- No memory persistence
-- No `knowledge.md`
-- 0% coverage on `linux.py`, `hybrid.py`, `screenshot.py`, `local_llm.py`
-- 12 unverified demo scripts
+- `StubBrain` deleted, `LocalLLMBrain` generates real action plans from UI state + task
+- `HybridPerceptionAdapter` wired into `RalphLoop` as default perception
+- `LocalLLM.analyze_screenshot_vision()` sends actual base64-encoded images
+- `SessionMemory` persists to JSON, survives across process restarts
+- `KnowledgeStore` writes human-readable `knowledge.md` + machine-readable JSON
+- 3 new loop-based demos with proper verification
 
 ---
 
