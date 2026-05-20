@@ -106,6 +106,38 @@ python demo_mouse.py
 - ⚠️ **Coordinates are approximate.** Vision models guess element positions. Usually close enough, but sometimes misses buttons.
 - ⚠️ **Task completion detection is basic.** Checks if audio is playing and if Brave is focused. Could be smarter.
 
+## What I Learned
+
+**Single-action planning is non-negotiable.** I tried letting the planner generate 3 actions at once. Every time, the second or third action was wrong because the screen had already changed after the first action. Now it plans 1 action, executes it, and re-perceives.
+
+**Cloud vision is worth paying for.** `llava:7b` on CPU takes ~3 minutes to analyze a screenshot. OpenRouter's `gpt-4o-mini` takes ~10 seconds. That's the difference between "this works" and "this is unusable."
+
+**Focus is harder than I thought.** I assumed typing would go where the mouse was. Nope — it goes to whatever window X11 thinks is focused. And on Wayland that's even messier. xdotool helps but isn't perfect.
+
+**Portal screenshots are noisy.** Every GNOME portal capture triggers a camera-shutter sound and a visual flash. ffmpeg x11grab is silent but captures black for native Wayland apps. No clean solution yet — it's either noisy or incomplete.
+
+**Coordinates lie.** The vision model says "button at (500, 300)" but that's relative to the 640px screenshot, not your actual 1920x1080 or 3072x1728 display. You have to scale them, and even then it's approximate.
+
+**Credits vanish faster than you expect.** 50 API calls burned ~$2-3 in one afternoon of testing. That's fine for occasional use, but for development you want local planning (Ollama) and only pay for vision.
+
+## What Would Make This Way Better
+
+**GPU for local vision.** If I had a GPU, `llava:7b` would drop from ~180s to ~2s per image. Then I wouldn't need OpenRouter at all. That's the biggest bottleneck.
+
+**A smaller vision model.** `moondream:1.8b` is supposedly much faster on CPU than `llava:7b`. Haven't tested it yet but it's on the list.
+
+**Caching vision results.** The desktop background and taskbar don't change between screenshots. Why re-analyze them every time? Cache static elements and only look at what changed.
+
+**Continuous video recording.** Instead of capturing a screenshot every 10 seconds, run ffmpeg in the background recording at 0.5 fps. Grab the latest frame instantly when you need it. No per-capture delay, no portal noise.
+
+**Learned action sequences.** After the agent successfully opens YouTube and searches a few times, it should remember the sequence. Next time, skip the vision + planning and just execute the cached steps.
+
+**Better focus control.** Instead of `alt+Tab` guessing, use `wmctrl -a <window_id>` or `xdotool windowfocus <id>` to explicitly focus the target window before typing.
+
+**Multiple completion signals.** Right now I just check "is audio playing?" A better check would be: is Brave focused? Does the URL contain "youtube.com/watch"? Is there a pause button visible? Combine all three.
+
+**PipeWire for audio.** `pactl` is a compatibility layer. Using PipeWire directly might give more accurate per-app audio detection.
+
 ## Limitations
 
 - Linux only. No plans for macOS/Windows.
