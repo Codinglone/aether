@@ -230,7 +230,11 @@ class EnhancedDesktopVerifier(DesktopVerifier):
 
 
 def main():
-    api_key = "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"
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        print("ERROR: Set OPENROUTER_API_KEY environment variable")
+        print("Get one at: https://openrouter.ai/settings/keys")
+        sys.exit(1)
 
     print("=" * 70)
     print("AETHER HYBRID AGENT")
