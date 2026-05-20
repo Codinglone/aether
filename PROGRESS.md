@@ -2,8 +2,8 @@
 
 **Date:** 2026-05-19
 **Session:** Full cloud agent architecture — OpenRouter vision + planning, ydotool execution
-**Branch:** `feature/close-the-loop`
-**Status:** Architecture complete, tested with limitations
+**Branch:** `feature/close-the-loop` → **MERGED INTO MAIN**
+**Status:** Architecture complete, all changes on main
 
 ---
 
