@@ -59,20 +59,22 @@ export OPENROUTER_API_KEY="sk-or-v1-..."
 
 ## Demos
 
+All demos live in `demos/`. Run them from the repo root (so imports work):
+
 ```bash
 # Full agent: cloud vision + cloud planning
 # Needs OPENROUTER_API_KEY set
-python demo_hybrid_agent.py
+python demos/demo_hybrid_agent.py
 
 # Just vision: see what the model detects on screen
-python demo_streaming_capture.py
+python demos/demo_streaming_capture.py
 
 # Keyboard-only: no vision, just shell commands + keystrokes
 # Fastest, but less smart
-python demo_keyboard_agent.py
+python demos/demo_keyboard_agent.py
 
 # Mouse demo: move the cursor around
-python demo_mouse.py
+python demos/demo_mouse.py
 ```
 
 ## How It Actually Works
@@ -155,8 +157,8 @@ aether/
 │   ├── action/         # ydotool execution
 │   ├── brain/          # Ollama and OpenRouter clients
 │   └── macro/          # Macro recorder (basic)
+├── demos/              # Demo scripts
 ├── tests/              # Unit + integration tests
-├── demo_*.py           # Various demos
 └── README.md           # This file
 ```
 
