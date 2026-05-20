@@ -1,189 +1,134 @@
 # Aether-Native
 
-Local-first, Linux-native computer-use agent with optional cloud vision.
+A Linux desktop agent that watches your screen and controls your mouse/keyboard to get stuff done.
 
-## What It Does
+I built this because I got tired of writing brittle shell scripts for desktop automation. I wanted something that could actually *see* the screen, understand what's going on, and figure out the next step without me hardcoding coordinates.
 
-Aether-Native controls your Linux desktop autonomously. You describe a task in natural language; it perceives the UI via screenshots (analyzed by cloud vision or local llava), reasons about what to do using a local or cloud LLM, executes mouse/keyboard actions via ydotool, verifies the result, and learns from failures.
+## The Pitch
 
-**Key difference from cloud agents:** Perception uses screenshots + vision (multimodal), but reasoning and execution happen locally. No data leaves your machine except the screenshot pixels sent to the vision API.
+You say: "Open Brave, go to YouTube, search for that Chris Brown song, and play it"
+
+The agent does:
+1. Takes a screenshot
+2. Asks a vision model "what's on screen?"
+3. Asks a planner "what should I click/type next?"
+4. Moves the mouse, clicks, types, waits
+5. Repeats until done
+
+No pre-recorded macros. No hardcoded coordinates. It figures it out each time.
 
 ## Architecture
 
 ```
-User Task
-    |
-    v
-+-----------+     +------------------+     +---------+
-|  RALPH    |<--->| Vision-First     |<--->| Screenshot|
-|  Loop     |     | Perception       |     | Capture  |
-+-----------+     +------------------+     +---------+
-    |  ^                |                           |
-    |  |                v                           v
-    |  |           +---------+                +----------+
-    |  |           | AT-SPI  |                | ffmpeg   |
-    |  |           |Fallback |                | portal   |
-    |  |           +---------+                +----------+
-    |  |
-    v  |
-+-----------+     +---------+     +----------+
-|  Brain    |     |  Linux  |     |  Verify  |
-| (Local/   |     | Action  |     | (Desktop)|
-|  Cloud)   |     | ydotool |     |          |
-+-----------+     +---------+     +----------+
+┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
+│   Screenshot │────▶│  Vision Model    │────▶│  UI Elements│
+│   (ffmpeg)   │     │  (OpenRouter or  │     │  (buttons,  │
+│              │     │   local llava)   │     │   inputs)   │
+└─────────────┘     └──────────────────┘     └─────────────┘
+                                                    │
+                                                    ▼
+┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
+│   ydotool   │◀────│  Planner         │◀────│  RALPH Loop │
+│   (mouse/   │     │  (local Ollama   │     │  (perceive  │
+│   keyboard) │     │   or OpenRouter) │     │   → plan    │
+│             │     │                  │     │   → act)    │
+└─────────────┘     └──────────────────┘     └─────────────┘
 ```
+
+**RALPH** = the loop that keeps going: Perceive → Reason → Act → Learn
 
 ## Quickstart
 
-### Prerequisites
-
-- Linux with GNOME (Wayland or X11)
-- Python 3.11+
-- `uv` (package manager)
-- Ollama running locally (for local planning)
-- `ydotool` daemon (for Wayland input)
-- OpenRouter API key (for cloud vision, optional but recommended)
-
-### Install
+You need Linux (GNOME/Wayland or X11) and a few things installed:
 
 ```bash
-# Clone and install
-uv pip install -e ".[dev]"
+# Python deps
+pip install -e ".[dev]"
 
-# Pull local models (optional, for local planning)
+# For Wayland mouse/keyboard control
+sudo ydotoold --socket-path=/tmp/.ydotool_socket &
+sudo chmod 666 /tmp/.ydotool_socket
+
+# Optional: local models (free, slow on CPU)
 ollama pull llama3.2:1b
 ollama pull llava
 
-# Start ydotool daemon (Wayland only)
-sudo ydotoold --socket-path=/tmp/.ydotool_socket &
-sudo chmod 666 /tmp/.ydotool_socket
+# Required: OpenRouter API key for vision (fast, ~$0.01 per screenshot)
+export OPENROUTER_API_KEY="sk-or-v1-..."
 ```
 
-### Run
+## Demos
 
 ```bash
-# Full cloud agent (OpenRouter vision + planning)
-python demo_full_cloud_agent.py
+# Full agent: cloud vision + cloud planning
+# Needs OPENROUTER_API_KEY set
+python demo_hybrid_agent.py
 
-# Local agent (Ollama planning + OpenRouter vision)
-python demo_cloud_vision_agent.py
+# Just vision: see what the model detects on screen
+python demo_streaming_capture.py
 
-# Keyboard-only agent (no vision, fastest)
+# Keyboard-only: no vision, just shell commands + keystrokes
+# Fastest, but less smart
 python demo_keyboard_agent.py
+
+# Mouse demo: move the cursor around
+python demo_mouse.py
 ```
 
-### Test
+## How It Actually Works
 
-```bash
-# Unit tests (fast, headless)
-pytest tests/test_core/ -v
+1. **Screenshot** — ffmpeg grabs the screen silently. On Wayland it falls back to GNOME portal (which makes a sound, working on fixing that).
 
-# Vision test (requires OpenRouter API key)
-python demo_openrouter_vision.py
-```
+2. **Vision** — Sends the screenshot to a multimodal model. We use OpenRouter's `gpt-4o-mini` because it's fast (~10s) and cheap. Local `llava:7b` works too but takes ~3 minutes per image on CPU.
 
-## How It Works
+3. **Plan** — The vision model returns a list of UI elements with coordinates. A text LLM (either OpenRouter cloud or local Ollama) decides what to do next: click here, type this, wait, etc.
 
-1. **Perceive:** Captures screenshot via GNOME portal or ffmpeg. Sends to vision model (OpenRouter cloud or local llava) for UI element detection. Falls back to AT-SPI accessibility tree.
-2. **Reason:** LLM analyzes the UI state + task + history and generates a single action (click, type, key, shell, wait, scroll).
-3. **Execute:** Performs actions via `ydotool` (Wayland) or `python-xlib` (X11).
-4. **Verify:** Checks that the UI state changed (process running, audio playing, screen brightness changed, active window changed).
-5. **Learn:** Re-plans after every action. Writes successful patterns to memory.
+4. **Act** — ydotool executes the action on your actual desktop.
 
-## Current Status
+5. **Verify** — Takes another screenshot to see if anything changed. If not, retries.
 
-### What Works Today ✅
+## What Actually Works
 
-- **Screenshot capture:** GNOME portal (Wayland) + ffmpeg x11grab (X11) + retry logic
-- **Cloud vision:** OpenRouter gpt-4o-mini (~10s, excellent accuracy)
-- **Local vision:** llava:7b via Ollama (~180s on CPU)
-- **Cloud planning:** OpenRouter gpt-4o-mini (~3s)
-- **Local planning:** llama3.2:1b via Ollama (~5s)
-- **Action execution:** Mouse (click, move), keyboard (type, hotkey, key), scroll, shell
-- **Verification:** Process check, audio detection, brightness diff, window change
-- **Focus enforcement:** Detects wrong window, switches with alt+Tab before typing
-- **Coordinate scaling:** Scales vision coordinates from screenshot space to display space
-- **Retry logic:** Auto-resizes screenshot on API errors, retries 3x
+- ✅ Taking screenshots via ffmpeg (silent on X11, portal fallback on Wayland)
+- ✅ Cloud vision (OpenRouter gpt-4o-mini) — fast, accurate
+- ✅ Cloud planning (OpenRouter gpt-4o-mini) — ~3s per plan
+- ✅ Local planning (Ollama llama3.2:1b) — ~26s on CPU, but free
+- ✅ Mouse/keyboard control via ydotool on Wayland
+- ✅ Window focus enforcement with xdotool before typing
+- ✅ Retry logic when vision API fails
+- ✅ Coordinate scaling from screenshot space to display space
 
-### Current Blockers ⚠️
+## What's Broken / Annoying
 
-1. **OpenRouter credits:** Depletes after ~50 API calls. Switching to local planning.
-2. **Window focus:** Agent sometimes types into wrong window. Need better focus management.
-3. **Screenshot noise:** GNOME portal triggers sound + flash. Need silent capture method.
-4. **Task completion:** Returns "success" prematurely. Needs better done-detection.
+- ⚠️ **Credits burn fast.** 50 API calls = ~$2-3. Use local Ollama for planning to save money.
+- ⚠️ **Wayland screenshots trigger GNOME sounds.** ffmpeg x11grab is silent but captures black for native Wayland apps. Portal works but beeps. No perfect solution yet.
+- ⚠️ **Focus is tricky.** The agent sometimes types into the wrong window if it's not fast enough to switch. xdotool helps but isn't 100%.
+- ⚠️ **Coordinates are approximate.** Vision models guess element positions. Usually close enough, but sometimes misses buttons.
+- ⚠️ **Task completion detection is basic.** Checks if audio is playing and if Brave is focused. Could be smarter.
 
-### Known Limitations
+## Limitations
 
-- Linux only (no macOS/Windows support planned)
-- Wayland users need `ydotoold` daemon running as root
-- Electron apps have limited AT-SPI support; vision fallback required
-- Coordinate accuracy varies (vision model returns approximate positions)
-- OpenRouter API costs accumulate quickly for development
+- Linux only. No plans for macOS/Windows.
+- Wayland needs `ydotoold` running as root (kinda sketchy, but it's what we have).
+- Electron apps (Discord, Spotify native) are invisible to AT-SPI, so vision is required.
+- You need an OpenRouter key for decent speed. Local vision is too slow without a GPU.
 
-## Project Structure
+## File Layout
 
 ```
 aether/
 ├── aether/
-│   ├── core/           # RALPH loop, brain, memory, safety, verify
-│   ├── perception/     # Vision-first, AT-SPI, hybrid adapter
-│   ├── action/         # ydotool, Xlib
-│   ├── brain/          # Local LLM (Ollama), OpenRouter cloud
-│   ├── macro/          # Self-healing macro recorder/player
-│   ├── api/            # FastAPI stub
-│   └── prompts/        # LLM prompt templates
-├── tests/
-│   ├── test_core/      # Unit tests
-│   ├── test_integration.py
-│   └── fixtures/       # Mock UI states
-├── docs/
-│   └── superpowers/
-│       ├── specs/      # Design documents
-│       └── plans/      # Implementation plans
-├── knowledge.md        # Learned UI quirks (auto-generated)
-├── PROGRESS.md         # Detailed progress log
-└── pyproject.toml
+│   ├── core/           # Loop, brain, memory, verifier
+│   ├── perception/     # Screenshot, vision, AT-SPI fallback
+│   ├── action/         # ydotool execution
+│   ├── brain/          # Ollama and OpenRouter clients
+│   └── macro/          # Macro recorder (basic)
+├── tests/              # Unit + integration tests
+├── demo_*.py           # Various demos
+└── README.md           # This file
 ```
 
-## Upcoming Features
-
-### ffmpeg Video Recording
-
-Instead of capturing individual screenshots (which triggers GNOME notifications), we're integrating **continuous video recording**:
-
-```bash
-# Background: record screen at low resolution
-ffmpeg -f x11grab -i :0 -vf "scale=320:-1,fps=0.5" -f image2pipe pipe:1
-
-# Agent samples latest frame on demand — no capture delay, no notifications
-```
-
-**Benefits:**
-- Zero per-capture delay (frame already captured)
-- No GNOME portal notifications/sounds
-- Enables real-time observation
-- Lower CPU overhead than repeated captures
-
-**Tradeoff:** Constant CPU usage (~5-10% for 320x180 @ 0.5fps)
-
-### Hybrid Cloud/Local Mode
-
-```
-Screenshot → OpenRouter Vision (fast, multimodal)
-     ↓
-Local Plan (llama3.2:1b via Ollama — free, fast)
-     ↓
-ydotool Action
-```
-
-**Cost:** ~1/3 of full cloud mode. Vision is the expensive part; planning is cheap locally.
-
-## Documentation
-
-- **Progress Log:** `PROGRESS.md` (detailed session-by-session log)
-- **Design Spec:** `docs/superpowers/specs/2026-05-19-aether-native-revised-design.md`
-- **Vision Architecture:** `docs/superpowers/specs/2026-05-19-vision-first-architecture.md`
-- **Phase A Plan:** `docs/superpowers/plans/2026-05-19-close-the-loop.md`
+Internal docs, architecture specs, and detailed progress logs are kept locally (not in git).
 
 ## License
 
@@ -191,7 +136,7 @@ AGPL-3.0
 
 ## Contributing
 
-1. Write a failing test first (TDD)
-2. Make it pass with minimal code
-3. Run `pytest`, `ruff check .`, `mypy aether/`
-4. Update `PROGRESS.md` with what you built and why
+This is a personal project but PRs are welcome. Just:
+1. Run `pytest` before committing
+2. Don't commit API keys (use env vars)
+3. Keep it simple
