@@ -10,3 +10,8 @@ knowledge.md
 htmlcov/
 .superpowers/
 .worktrees/
+
+# Local docs (not for public git)
+docs/
+PROGRESS.md
+Aether-Native_Blueprint.md
