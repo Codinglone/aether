@@ -123,72 +123,114 @@ class RalphLoop:
         return TaskResult(status="failed", reason=f"Max retries ({self.max_retries}) exceeded")
 
     def _enforce_app_focus(self, action: Action, task: str, ui_map: UIMap) -> Action:
-        """Before typing, ensure the target app is active."""
-        print(f"  [Focus Debug] action.type={action.type}, task={task[:30]}, active_window={ui_map.active_window}")
-        if action.type != "type":
+        """Before typing, ensure the target app is active using xdotool."""
+        if action.type not in ("type", "click"):
             return action
 
         # Guess target app from task
         task_lower = task.lower()
-        target_apps = []
+        target_app = None
         if "brave" in task_lower:
-            target_apps = ["brave", "youtube"]
+            target_app = "brave"
         elif "firefox" in task_lower:
-            target_apps = ["firefox"]
+            target_app = "firefox"
         elif "chrome" in task_lower:
-            target_apps = ["chrome"]
+            target_app = "chrome"
         elif "spotify" in task_lower:
-            target_apps = ["spotify"]
+            target_app = "spotify"
 
-        if not target_apps:
+        if not target_app:
             return action
 
-        # Check if current app matches target
-        current_app = (ui_map.active_window.name if ui_map.active_window else "") if hasattr(ui_map, "active_window") else ""
-        if not current_app:
-            # Try to infer from elements
-            for elem in ui_map.elements[:5]:
-                if hasattr(elem, "app") and elem.app:
-                    current_app = elem.app
-                    break
+        # Check current window title using xdotool
+        current_title = ""
+        try:
+            result = subprocess.run(
+                ["xdotool", "getactivewindow", "getwindowname"],
+                capture_output=True, text=True, timeout=2,
+            )
+            if result.returncode == 0:
+                current_title = result.stdout.strip().lower()
+        except Exception:
+            pass
 
-        current_lower = current_app.lower()
-        for target in target_apps:
-            if target in current_lower:
-                return action  # Already in target app
+        if target_app in current_title:
+            return action  # Already focused
 
-        # Not in target app — switch instead of typing
-        print(f"  [Focus] Current app is '{current_app}', not target {target_apps}. Switching before typing.")
-        return Action(
-            type="key",
-            params={"key": "alt+Tab"},
-            reason=f"Switch from {current_app} to target app",
-            expected_change="Window focus changes",
-        )
+        # Try to focus target app with xdotool
+        print(f"  [Focus] Current window: '{current_title[:40]}', need: {target_app}. Focusing...")
+        try:
+            subprocess.run(
+                ["xdotool", "search", "--name", target_app, "windowactivate"],
+                capture_output=True, timeout=3,
+            )
+            time.sleep(0.5)
+        except Exception:
+            pass
+
+        # If still not focused and it's a type action, return focus action
+        if action.type == "type":
+            return Action(
+                type="shell",
+                params={"command": f"xdotool search --name {target_app} windowactivate", "timeout": 2},
+                reason=f"Focus {target_app} window before typing",
+                expected_change=f"{target_app} window becomes active",
+            )
+
+        return action
 
     def _is_task_complete(self, task: str, ui_map: UIMap) -> bool:
         """Check if the task appears complete based on current state."""
         task_lower = task.lower()
-        # For video/music tasks: check if audio is playing from target app
+
+        # For video/music tasks
         if any(kw in task_lower for kw in ["play", "video", "music", "song", "youtube"]):
-            target_app = "brave" if "brave" in task_lower else ""
-            return self._check_audio_playing(target_app)
+            # Check 1: Is Brave running with YouTube?
+            if not self._is_app_running("brave"):
+                return False
+
+            # Check 2: Is audio playing?
+            if not self._check_audio_playing():
+                return False
+
+            # Check 3: Is the active window a browser?
+            try:
+                result = subprocess.run(
+                    ["xdotool", "getactivewindow", "getwindowname"],
+                    capture_output=True, text=True, timeout=2,
+                )
+                if result.returncode == 0:
+                    title = result.stdout.lower()
+                    if "youtube" in title or "brave" in title:
+                        return True
+            except Exception:
+                pass
+
+            return False
+
         return False
 
-    def _check_audio_playing(self, target_app: str = "") -> bool:
-        """Check if audio is playing from target app."""
-        import subprocess
+    @staticmethod
+    def _is_app_running(app_name: str) -> bool:
+        """Check if an app process is running."""
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", app_name],
+                capture_output=True, timeout=2,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def _check_audio_playing() -> bool:
+        """Check if any audio stream is active."""
         try:
             result = subprocess.run(
                 ["pactl", "list", "sink-inputs"],
                 capture_output=True, text=True, timeout=2,
             )
-            if result.returncode != 0 or "Sink Input" not in result.stdout:
-                return False
-            # Check if target app is mentioned in sink inputs
-            if target_app:
-                return target_app.lower() in result.stdout.lower()
-            return True
+            return result.returncode == 0 and "Sink Input" in result.stdout
         except Exception:
             return False
 

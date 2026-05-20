@@ -133,35 +133,66 @@ class VisionFirstPerceptionAdapter(PerceptionAdapter):
         return path
 
     def _capture_via_portal(self) -> Optional[str]:
-        """Use freedesktop portal to capture screenshot on Wayland."""
+        """Use freedesktop portal to capture screenshot on Wayland.
+        
+        Temporarily suppresses GNOME notification sounds during capture.
+        """
         import glob
         pictures_dir = os.path.expanduser("~/Pictures")
-        # Remove old screenshots
-        for f in glob.glob(os.path.join(pictures_dir, "Screenshot*.png")):
-            try:
-                os.remove(f)
-            except OSError:
-                pass
+        
+        # Suppress notification sounds temporarily
+        original_sound = None
+        try:
+            result = subprocess.run(
+                ["gsettings", "get", "org.gnome.desktop.sound", "event-sounds"],
+                capture_output=True, text=True, timeout=2,
+            )
+            if result.returncode == 0:
+                original_sound = result.stdout.strip()
+                subprocess.run(
+                    ["gsettings", "set", "org.gnome.desktop.sound", "event-sounds", "false"],
+                    capture_output=True, timeout=2,
+                )
+        except Exception:
+            pass
+        
+        try:
+            # Remove old screenshots
+            for f in glob.glob(os.path.join(pictures_dir, "Screenshot*.png")):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
 
-        # Call portal
-        result = subprocess.run(
-            ["gdbus", "call", "--session",
-             "--dest", "org.freedesktop.portal.Desktop",
-             "--object-path", "/org/freedesktop/portal/desktop",
-             "--method", "org.freedesktop.portal.Screenshot.Screenshot",
-             "", "{}"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode != 0:
+            # Call portal
+            result = subprocess.run(
+                ["gdbus", "call", "--session",
+                 "--dest", "org.freedesktop.portal.Desktop",
+                 "--object-path", "/org/freedesktop/portal/desktop",
+                 "--method", "org.freedesktop.portal.Screenshot.Screenshot",
+                 "", "{}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode != 0:
+                return None
+
+            # Poll for screenshot file
+            for _ in range(20):
+                time.sleep(0.3)
+                files = glob.glob(os.path.join(pictures_dir, "Screenshot*.png"))
+                if files:
+                    return files[0]
             return None
-
-        # Poll for screenshot file
-        for _ in range(20):
-            time.sleep(0.3)
-            files = glob.glob(os.path.join(pictures_dir, "Screenshot*.png"))
-            if files:
-                return files[0]
-        return None
+        finally:
+            # Restore sounds
+            if original_sound is not None:
+                try:
+                    subprocess.run(
+                        ["gsettings", "set", "org.gnome.desktop.sound", "event-sounds", original_sound],
+                        capture_output=True, timeout=2,
+                    )
+                except Exception:
+                    pass
 
     def _analyze_with_llava(self, image_path: str) -> str:
         """Send screenshot to llava via Ollama."""
