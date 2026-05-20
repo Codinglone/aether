@@ -7,16 +7,6 @@
 
 ---
 
-## Security Note
-
-**OpenRouter API key was accidentally committed to git history** (commits `32e09df` and `e85368b`).
-- **Status:** ✅ Key has been revoked/deleted by user
-- **Current code:** Uses `OPENROUTER_API_KEY` environment variable (no hardcoded keys)
-- **Sudo password:** Never committed to repo (only in conversation)
-- **Repo safety:** Safe to make public — exposed key is revoked
-
----
-
 ## What Was Built Today
 
 ### 1. Full Cloud Agent (`demo_full_cloud_agent.py`)
